@@ -44,7 +44,19 @@ class BitwardenItem:
     raw: dict = field(default_factory=dict, repr=False)
 
     def get_field(self, name: str) -> Optional[str]:
-        return self.fields.get(name)
+        """Return a value by custom-field name or dot-notation path (e.g. ``login.username``)."""
+        if name in self.fields:
+            return self.fields[name]
+        # Resolve dot-notation paths against the raw item (e.g. "login.username")
+        parts = name.split(".")
+        node: object = self.raw
+        for part in parts:
+            if not isinstance(node, dict):
+                return None
+            node = node.get(part)
+            if node is None:
+                return None
+        return str(node) if node is not None else None
 
 
 # ---------------------------------------------------------------------------

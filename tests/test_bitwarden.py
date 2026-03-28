@@ -49,6 +49,52 @@ def client() -> BitwardenClient:
     return BitwardenClient(session=SESSION)
 
 
+class TestBitwardenItem:
+    def _login_item(self) -> BitwardenItem:
+        raw = {
+            "id": "abc123",
+            "name": "MYAPI",
+            "type": 1,
+            "login": {"username": "edgar", "password": "s3cr3t"},
+            "fields": [{"name": "token", "value": "tok123", "type": 0}],
+        }
+        from envmaker.bitwarden import BitwardenClient
+        return BitwardenClient._parse_item(raw)
+
+    def test_custom_field_still_works(self) -> None:
+        item = self._login_item()
+        assert item.get_field("token") == "tok123"
+
+    def test_login_username_via_dot_notation(self) -> None:
+        item = self._login_item()
+        assert item.get_field("login.username") == "edgar"
+
+    def test_login_password_via_dot_notation(self) -> None:
+        item = self._login_item()
+        assert item.get_field("login.password") == "s3cr3t"
+
+    def test_missing_key_returns_none(self) -> None:
+        item = self._login_item()
+        assert item.get_field("login.totp") is None
+
+    def test_nonexistent_path_returns_none(self) -> None:
+        item = self._login_item()
+        assert item.get_field("does.not.exist") is None
+
+    def test_custom_field_takes_precedence_over_dot_path(self) -> None:
+        """A custom field named 'a.b' should win over raw['a']['b']."""
+        raw = {
+            "id": "x",
+            "name": "y",
+            "type": 1,
+            "a": {"b": "raw_val"},
+            "fields": [{"name": "a.b", "value": "custom_val", "type": 0}],
+        }
+        from envmaker.bitwarden import BitwardenClient
+        item = BitwardenClient._parse_item(raw)
+        assert item.get_field("a.b") == "custom_val"
+
+
 class TestGetItem:
     def test_success(self, client: BitwardenClient) -> None:
         payload = _item_json(fields={"DATABASE_URL": "postgres://localhost"})
