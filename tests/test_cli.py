@@ -6,11 +6,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import click
 import pytest
 from click.testing import CliRunner
 
 from envmaker.bitwarden import BitwardenItem, BitwardenItemNotFoundError
-from envmaker.cli import main
+from envmaker.cli import _get_client, main
 
 SESSION = "test-session-token"
 
@@ -268,3 +269,48 @@ class TestStatus:
                 ["status", "--example", str(tmp_repo / ".env.example")],
             )
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# _get_client session resolution
+# ---------------------------------------------------------------------------
+
+
+class TestGetClient:
+    def test_env_var_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """BW_SESSION environment variable is used directly."""
+        monkeypatch.setenv("BW_SESSION", "env-tok")
+        client = _get_client()
+        assert client.session == "env-tok"
+
+    def test_dotenv_file_session(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BW_SESSION from the .env file is used as a fallback."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("BW_SESSION", raising=False)
+        (tmp_path / ".env").write_text("BW_SESSION=dotenv-tok\n", encoding="utf-8")
+        client = _get_client()
+        assert client.session == "dotenv-tok"
+
+    def test_dotenv_file_session_ignored_when_env_var_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Env var takes priority over the .env file."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("BW_SESSION", "env-tok")
+        (tmp_path / ".env").write_text("BW_SESSION=dotenv-tok\n", encoding="utf-8")
+        client = _get_client()
+        assert client.session == "env-tok"
+
+    def test_no_session_raises_clear_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing session raises a ClickException with actionable instructions."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("BW_SESSION", raising=False)
+        with pytest.raises(click.ClickException) as exc_info:
+            _get_client()
+        msg = exc_info.value.format_message()
+        assert "bw unlock --raw" in msg
+        assert "BW_SESSION" in msg

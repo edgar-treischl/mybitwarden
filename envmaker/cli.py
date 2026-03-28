@@ -13,8 +13,6 @@ from .bitwarden import (
     BitwardenClient,
     BitwardenError,
     BitwardenItemNotFoundError,
-    BitwardenNotFoundError,
-    BitwardenSessionError,
 )
 from .config import CONFIG_FILENAME, EnvmakerConfig, find_config
 from .env_file import parse_env_example, read_env_file, write_env_file
@@ -29,32 +27,32 @@ _DEFAULT_OUTPUT = ".env"
 
 
 def _get_client() -> BitwardenClient:
-    """Return an authenticated BitwardenClient, prompting to unlock if needed."""
-    client = BitwardenClient()
+    """Return an authenticated BitwardenClient.
 
+    Looks for ``BW_SESSION`` in (in order):
+
+    1. The ``BW_SESSION`` environment variable.
+    2. The ``.env`` file in the current directory.
+
+    Raises a :class:`click.ClickException` with actionable instructions when
+    neither source provides a session token.
+    """
+    client = BitwardenClient()
     if client.session:
         return client
 
-    try:
-        vault_status = client.status().get("status", "unauthenticated")
-    except BitwardenNotFoundError as exc:
-        raise click.ClickException(str(exc))
-    except BitwardenError:
-        raise click.ClickException("Could not connect to the Bitwarden CLI.")
+    env_path = Path(_DEFAULT_OUTPUT)
+    if env_path.exists():
+        session = read_env_file(env_path).get("BW_SESSION")
+        if session:
+            return BitwardenClient(session=session)
 
-    if vault_status == "unauthenticated":
-        raise click.ClickException(
-            "Not logged in to Bitwarden. Run 'bw login' first."
-        )
-
-    if vault_status == "locked":
-        password = click.prompt("Bitwarden master password", hide_input=True)
-        try:
-            client.unlock(password)
-        except BitwardenSessionError as exc:
-            raise click.ClickException(str(exc))
-
-    return client
+    raise click.ClickException(
+        "No Bitwarden session found.\n"
+        "Unlock your vault and export the session token:\n\n"
+        "  export BW_SESSION=$(bw unlock --raw)\n\n"
+        "Or add  BW_SESSION=<token>  to your .env file."
+    )
 
 
 def _load_config(config_path: Optional[Path]) -> Optional[EnvmakerConfig]:

@@ -100,7 +100,7 @@ class BitwardenClient:
         if not self._session:
             raise BitwardenSessionError(
                 "No active Bitwarden session. "
-                "Set the BW_SESSION environment variable or run 'bw unlock' first."
+                "Run `bw unlock --raw` and export the result as BW_SESSION."
             )
         return self._run(*args, "--session", self._session)
 
