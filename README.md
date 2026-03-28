@@ -10,6 +10,20 @@
 
 ## Installation
 
+**Global install (recommended)** — makes `envmaker` available in every terminal session:
+
+```bash
+pipx install git+https://github.com/yourusername/mybitwarden.git
+```
+
+Or, if you have a local clone and want edits reflected immediately:
+
+```bash
+pipx install --editable /path/to/mybitwarden
+```
+
+**Project-local install:**
+
 ```bash
 pip install envmaker
 ```
