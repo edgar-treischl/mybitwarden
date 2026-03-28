@@ -1,0 +1,12 @@
+[bitwarden]
+# Name of the Bitwarden item that holds this repo's secrets.
+# Defaults to the current directory name if omitted.
+item_name = "my-project"
+
+# Alternatively, reference the item by its Bitwarden UUID:
+# item_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+[mapping]
+# Optional: map .env variable names to differently-named fields in Bitwarden.
+# DATABASE_URL = "db_url"
+# API_KEY      = "api_key"
