@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "envmaker"
 version = "0.1.0"
 description = "Generate .env files from Bitwarden secrets"
-readme = "READEME.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
