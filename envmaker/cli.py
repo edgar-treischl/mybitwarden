@@ -111,11 +111,13 @@ def main() -> None:
     is_flag=True,
     help="Fail instead of interactively prompting for missing secrets.",
 )
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt when updating an existing .env file.")
 def pull(
     example: str,
     output: str,
     config_path: Optional[Path],
     no_prompt: bool,
+    yes: bool,
 ) -> None:
     """Fetch secrets from Bitwarden and write a .env file."""
     example_path = Path(example)
@@ -164,8 +166,47 @@ def pull(
         for var in missing:
             resolved[var] = click.prompt(f"  {var}", hide_input=True)
 
-    write_env_file(output_path, resolved)
-    click.echo(f"✓ Written {len(resolved)} variable(s) to '{output}'.")
+    # Read existing .env to preserve local-only keys and detect changes.
+    existing: dict[str, str] = {}
+    if output_path.exists():
+        existing = read_env_file(output_path)
+
+    example_var_set = set(var_names)
+    local_only = {k: v for k, v in existing.items() if k not in example_var_set}
+
+    # Merge: Bitwarden-resolved vars first (in .env.example order), then local-only.
+    merged = {**resolved, **local_only}
+
+    if output_path.exists():
+        if existing == merged:
+            click.echo(f"✓ '{output}' is already up to date ({len(merged)} variable(s)).")
+            return
+
+        # Show what will change before asking for confirmation.
+        new_vars = [v for v in var_names if v not in existing]
+        updated_vars = [v for v in var_names if v in existing and existing.get(v) != resolved.get(v)]
+        unchanged_count = len(var_names) - len(new_vars) - len(updated_vars)
+
+        click.echo(f"\n  Changes to '{output}':")
+        if new_vars:
+            for v in new_vars:
+                click.echo(f"    + {v}  (new)")
+        if updated_vars:
+            for v in updated_vars:
+                click.echo(f"    ~ {v}  (updated)")
+        if unchanged_count:
+            click.echo(f"    · {unchanged_count} variable(s) unchanged")
+        if local_only:
+            click.echo(
+                f"    ↳ {len(local_only)} local-only variable(s) will be preserved: "
+                + ", ".join(local_only)
+            )
+
+        if not yes:
+            click.confirm(f"\nUpdate '{output}'?", abort=True)
+
+    write_env_file(output_path, merged)
+    click.echo(f"✓ Written {len(merged)} variable(s) to '{output}'.")
 
 
 # ---------------------------------------------------------------------------
@@ -241,8 +282,26 @@ def init(item_name: str, force: bool) -> None:
             f"'{CONFIG_FILENAME}' already exists. Use --force to overwrite."
         )
     config = EnvmakerConfig(item_name=item_name)
-    config_path.write_text(config.to_toml(), encoding="utf-8")
+    config_path.write_text(config.to_toml(include_mapping_hint=True), encoding="utf-8")
     click.echo(f"✓ Created '{CONFIG_FILENAME}' with item name '{item_name}'.")
+    click.echo()
+    click.echo("Next steps:")
+    click.echo("  • Run 'envmaker pull' to fetch secrets from Bitwarden.")
+    click.echo("  • Run 'envmaker push' to upload your local .env to Bitwarden.")
+    click.echo()
+    click.echo("Field mapping (optional):")
+    click.echo(
+        "  If a .env variable name differs from its Bitwarden custom-field name,"
+    )
+    click.echo(f"  add a [mapping] section to '{CONFIG_FILENAME}'.  Example:")
+    click.echo()
+    click.echo("    [mapping]")
+    click.echo('    DATABASE_URL = "db_connection_string"')
+    click.echo()
+    click.echo(
+        "  This maps DATABASE_URL in your .env to the field 'db_connection_string'"
+        " in Bitwarden."
+    )
 
 
 # ---------------------------------------------------------------------------

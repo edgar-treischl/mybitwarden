@@ -156,6 +156,130 @@ class TestPull:
         content = (tmp_repo / ".env").read_text()
         assert "DATABASE_URL=postgres://mapped" in content
 
+    def test_pull_preserves_local_only_keys(self, runner: CliRunner, tmp_repo: Path) -> None:
+        """Keys in the existing .env that are not in .env.example must survive pull."""
+        (tmp_repo / ".env").write_text(
+            "DATABASE_URL=old\nAPI_KEY=old\nSECRET_TOKEN=old\nLOCAL_ONLY=do-not-delete\n"
+        )
+        item = _make_item(
+            fields={"DATABASE_URL": "new-db", "API_KEY": "new-key", "SECRET_TOKEN": "new-secret"}
+        )
+        with patch("envmaker.cli._get_client") as mock_factory:
+            mock_factory.return_value.get_item.return_value = item
+            result = runner.invoke(
+                main,
+                [
+                    "pull",
+                    "--example", str(tmp_repo / ".env.example"),
+                    "--output", str(tmp_repo / ".env"),
+                    "--yes",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        content = (tmp_repo / ".env").read_text()
+        assert "LOCAL_ONLY=do-not-delete" in content
+        assert "DATABASE_URL=new-db" in content
+
+    def test_pull_confirms_before_updating_existing_env(
+        self, runner: CliRunner, tmp_repo: Path
+    ) -> None:
+        """pull must ask for confirmation when .env already exists and has changes."""
+        (tmp_repo / ".env").write_text(
+            "DATABASE_URL=old\nAPI_KEY=old\nSECRET_TOKEN=old\n"
+        )
+        item = _make_item(
+            fields={"DATABASE_URL": "new-db", "API_KEY": "new-key", "SECRET_TOKEN": "new-secret"}
+        )
+        with patch("envmaker.cli._get_client") as mock_factory:
+            mock_factory.return_value.get_item.return_value = item
+            # Confirm the prompt.
+            result = runner.invoke(
+                main,
+                [
+                    "pull",
+                    "--example", str(tmp_repo / ".env.example"),
+                    "--output", str(tmp_repo / ".env"),
+                ],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Update" in result.output
+        content = (tmp_repo / ".env").read_text()
+        assert "DATABASE_URL=new-db" in content
+
+    def test_pull_aborts_when_confirmation_declined(
+        self, runner: CliRunner, tmp_repo: Path
+    ) -> None:
+        """Declining the confirmation must leave the .env file untouched."""
+        original = "DATABASE_URL=old\nAPI_KEY=old\nSECRET_TOKEN=old\n"
+        (tmp_repo / ".env").write_text(original)
+        item = _make_item(
+            fields={"DATABASE_URL": "new-db", "API_KEY": "new-key", "SECRET_TOKEN": "new-secret"}
+        )
+        with patch("envmaker.cli._get_client") as mock_factory:
+            mock_factory.return_value.get_item.return_value = item
+            result = runner.invoke(
+                main,
+                [
+                    "pull",
+                    "--example", str(tmp_repo / ".env.example"),
+                    "--output", str(tmp_repo / ".env"),
+                ],
+                input="N\n",
+            )
+
+        assert result.exit_code != 0
+        assert (tmp_repo / ".env").read_text() == original
+
+    def test_pull_yes_skips_confirmation(self, runner: CliRunner, tmp_repo: Path) -> None:
+        """--yes bypasses the confirmation prompt for existing .env files."""
+        (tmp_repo / ".env").write_text(
+            "DATABASE_URL=old\nAPI_KEY=old\nSECRET_TOKEN=old\n"
+        )
+        item = _make_item(
+            fields={"DATABASE_URL": "new-db", "API_KEY": "new-key", "SECRET_TOKEN": "new-secret"}
+        )
+        with patch("envmaker.cli._get_client") as mock_factory:
+            mock_factory.return_value.get_item.return_value = item
+            result = runner.invoke(
+                main,
+                [
+                    "pull",
+                    "--example", str(tmp_repo / ".env.example"),
+                    "--output", str(tmp_repo / ".env"),
+                    "--yes",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Update" not in result.output
+        content = (tmp_repo / ".env").read_text()
+        assert "DATABASE_URL=new-db" in content
+
+    def test_pull_up_to_date_skips_write(self, runner: CliRunner, tmp_repo: Path) -> None:
+        """When Bitwarden values match the existing .env, report up-to-date and skip write."""
+        (tmp_repo / ".env").write_text(
+            "DATABASE_URL=postgres://localhost\nAPI_KEY=k1\nSECRET_TOKEN=s1\n"
+        )
+        item = _make_item(
+            fields={"DATABASE_URL": "postgres://localhost", "API_KEY": "k1", "SECRET_TOKEN": "s1"}
+        )
+        with patch("envmaker.cli._get_client") as mock_factory:
+            mock_factory.return_value.get_item.return_value = item
+            result = runner.invoke(
+                main,
+                [
+                    "pull",
+                    "--example", str(tmp_repo / ".env.example"),
+                    "--output", str(tmp_repo / ".env"),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "up to date" in result.output.lower()
+
 
 # ---------------------------------------------------------------------------
 # push
@@ -212,7 +336,11 @@ class TestInit:
             config = Path(td) / ".envmakerconfig"
             assert result.exit_code == 0, result.output
             assert config.exists()
-            assert "myproject" in config.read_text()
+            content = config.read_text()
+            assert "myproject" in content
+            # The generated config should include a commented mapping hint.
+            assert "[mapping]" in content
+            assert "mapping" in result.output.lower()
 
     def test_fails_if_config_exists(self, runner: CliRunner) -> None:
         with runner.isolated_filesystem() as td:

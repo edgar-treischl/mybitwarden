@@ -21,8 +21,11 @@ class EnvmakerConfig:
 
     @classmethod
     def from_file(cls, path: Path) -> "EnvmakerConfig":
-        with open(path, "rb") as fh:
-            data = tomllib.load(fh)
+        try:
+            with open(path, "rb") as fh:
+                data = tomllib.load(fh)
+        except tomllib.TOMLDecodeError as exc:
+            raise tomllib.TOMLDecodeError(f"{path}: {exc}") from exc
         bw = data.get("bitwarden", {})
         return cls(
             item_name=bw.get("item_name", ""),
@@ -30,17 +33,32 @@ class EnvmakerConfig:
             mapping=data.get("mapping", {}),
         )
 
-    def to_toml(self) -> str:
+    @staticmethod
+    def _toml_str(value: str) -> str:
+        """Return *value* as a quoted TOML basic string with required escapes."""
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def to_toml(self, include_mapping_hint: bool = False) -> str:
         lines = ["[bitwarden]"]
         if self.item_name:
-            lines.append(f'item_name = "{self.item_name}"')
+            lines.append(f"item_name = {self._toml_str(self.item_name)}")
         if self.item_id:
-            lines.append(f'item_id = "{self.item_id}"')
+            lines.append(f"item_id = {self._toml_str(self.item_id)}")
         if self.mapping:
             lines.append("")
             lines.append("[mapping]")
             for env_var, bw_field in self.mapping.items():
-                lines.append(f'{env_var} = "{bw_field}"')
+                lines.append(f"{env_var} = {self._toml_str(bw_field)}")
+        elif include_mapping_hint:
+            lines.append("")
+            lines.append(
+                "# [mapping]"
+            )
+            lines.append(
+                "# Uncomment to map .env variable names to differently-named Bitwarden"
+                " custom fields."
+            )
+            lines.append("# DATABASE_URL = \"db_connection_string\"")
         return "\n".join(lines) + "\n"
 
 

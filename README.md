@@ -36,6 +36,11 @@ Requires Python ≥ 3.11 and the [Bitwarden CLI](https://bitwarden.com/help/cli/
 cd my-repo
 envmaker init    # creates .envmakerconfig → points to a Bitwarden item
 envmaker pull    # writes .env from Bitwarden secrets
+
+bw login --apikey
+export BW_SESSION=$(bw unlock --raw)
+envmaker pull
+
 ```
 
 ## Commands
